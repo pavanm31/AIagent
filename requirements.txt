@@ -1,0 +1,6 @@
+gradio
+pandas
+matplotlib
+seaborn
+smolagent
+openpyxl  # Required for reading Excel files
