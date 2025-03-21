@@ -1,58 +1,55 @@
-import gradio as gr
+import streamlit as st
 import pandas as pd
-import smolagent
-import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
+from smolagents import DataCleanser, InsightGenerator, DataVisualizer
 
-def preprocess_data(file):
-    try:
-        df = pd.read_csv(file.name) if file.name.endswith('.csv') else pd.read_excel(file.name)
-        agent = smolagent.SmolAgent()
-        cleaned_df = agent.run("Clean and preprocess this dataset", df)
-        return cleaned_df.describe().to_string()
-    except Exception as e:
-        return f"Error in preprocessing: {str(e)}"
+# Title of the app
+st.title("Data Analysis with Hugging Face SmolAgents")
 
-def generate_insights(file):
-    try:
-        df = pd.read_csv(file.name) if file.name.endswith('.csv') else pd.read_excel(file.name)
-        agent = smolagent.SmolAgent()
-        insights = agent.run("Generate insights and report on this dataset", df)
-        return insights
-    except Exception as e:
-        return f"Error in generating insights: {str(e)}"
+# Step 1: Create a user interface to receive data file
+uploaded_file = st.file_uploader("Upload your data file (CSV or Excel)", type=["csv", "xlsx"])
 
-def visualize_data(file):
-    try:
-        df = pd.read_csv(file.name) if file.name.endswith('.csv') else pd.read_excel(file.name)
-        agent = smolagent.SmolAgent()
-        important_features = agent.run("Identify important features in this dataset", df)
-        
-        if not isinstance(important_features, dict):
-            return "Error: Expected a dictionary of feature importance values."
-        
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.barplot(x=list(important_features.keys()), y=list(important_features.values()), ax=ax)
-        ax.set_title("Feature Importance")
-        plt.xticks(rotation=45)
-        return fig
-    except Exception as e:
-        return f"Error in visualization: {str(e)}"
+if uploaded_file is not None:
+    # Read the file
+    if uploaded_file.name.endswith('.csv'):
+        df = pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith('.xlsx'):
+        df = pd.read_excel(uploaded_file)
+    
+    st.write("### Raw Data")
+    st.write(df)
 
-with gr.Blocks() as demo:
-    gr.Markdown("## AI-Powered Data Analysis with SmolAgent")
-    file_input = gr.File(label="Upload CSV or Excel File")
+    # Step 2: Use Hugging Face SmolAgents for data cleansing and preprocessing
+    st.write("### Data Cleansing and Preprocessing")
+    cleanser = DataCleanser()
+    df_cleaned = cleanser.clean_data(df)
+    st.write("Cleaned Data:")
+    st.write(df_cleaned)
+
+    # Step 3: Use Hugging Face SmolAgents to generate insights
+    st.write("### Key Insights from Data")
+    insight_generator = InsightGenerator()
+    insights = insight_generator.generate_insights(df_cleaned)
+    st.write(insights)
+
+    # Step 4: Create data visualizations
+    st.write("### Data Visualizations")
+    visualizer = DataVisualizer()
     
-    preprocess_btn = gr.Button("Preprocess Data")
-    preprocess_output = gr.Textbox()
-    preprocess_btn.click(preprocess_data, inputs=file_input, outputs=preprocess_output)
-    
-    insights_btn = gr.Button("Generate Insights")
-    insights_output = gr.Textbox()
-    insights_btn.click(generate_insights, inputs=file_input, outputs=insights_output)
-    
-    visualize_btn = gr.Button("Visualize Data")
-    visualize_output = gr.Plot()
-    visualize_btn.click(visualize_data, inputs=file_input, outputs=visualize_output)
-    
-demo.launch()
+    # Example visualizations
+    st.write("#### Histogram of Numerical Columns")
+    numerical_columns = df_cleaned.select_dtypes(include=[np.number]).columns
+    for col in numerical_columns:
+        fig = visualizer.plot_histogram(df_cleaned, col)
+        st.pyplot(fig)
+
+    st.write("#### Correlation Heatmap")
+    fig = visualizer.plot_correlation_heatmap(df_cleaned)
+    st.pyplot(fig)
+
+    # Step 5: Display the output
+    st.write("### Final Output")
+    st.write("Data analysis completed. Check the insights and visualizations above.")
+
+else:
+    st.write("Please upload a file to get started.")
