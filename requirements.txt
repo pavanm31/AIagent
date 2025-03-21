@@ -1,7 +1,7 @@
-streamlit==1.26.0
-pandas==2.0.3
-numpy==1.24.3
+streamlit
+pandas
+numpy
 smolagents # Replace with the actual version of smolagents
-openpyxl==3.1.2  # For Excel file support
-matplotlib==3.7.1  # For visualizations
-seaborn==0.12.2  # For advanced visualizations
+openpyxl  # For Excel file support
+matplotlib  # For visualizations
+seaborn  # For advanced visualizations
