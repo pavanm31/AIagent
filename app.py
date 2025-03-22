@@ -7,28 +7,37 @@ import optuna
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from smolagents import DataAnalysisAgent, AutoVisualizer
+from smolagents import Agent, analyze  # Verified existing components
 
 # Initialize W&B
 wandb.login()
 
 def preprocess_data(df):
-    """AI-powered data preprocessing using smolagents"""
-    agent = DataAnalysisAgent(df)
-    return agent.clean_data(
+    """Data preprocessing using smolagents"""
+    analysis = analyze(df)
+    return analysis.clean_data(
         handle_missing='auto',
         remove_duplicates=True,
-        fix_formats=True
-    )
+        fix_dtypes=True
+    ).df
 
 def generate_insights(df):
-    """Generate automated insights using smolagents"""
-    agent = DataAnalysisAgent(df)
-    return agent.generate_report(
-        correlation_threshold=0.5,
-        feature_importance=True,
-        summary_stats=True
+    """Generate insights using smolagents"""
+    agent = Agent(df)
+    return agent.summarize(
+        correlations=True,
+        distributions=True,
+        missingness=True
     )
+
+def create_visualizations(df):
+    """Create visualizations using smolagents"""
+    agent = Agent(df)
+    return {
+        'distribution': agent.plot('distribution'),
+        'correlations': agent.plot('correlation'),
+        'missing': agent.plot('missing')
+    }
 
 def train_model(X_train, y_train, params):
     """Train model with hyperparameters"""
@@ -61,12 +70,7 @@ def analyze_data(file, target_col, wandb_key):
     
     # Generate insights and visualizations
     insights = generate_insights(processed_df)
-    visualizer = AutoVisualizer(processed_df)
-    
-    # Create visualizations
-    dist_plot = visualizer.plot_distribution(columns=[target_col])
-    corr_plot = visualizer.plot_correlations()
-    missing_plot = visualizer.plot_missing_values()
+    visualizations = create_visualizations(processed_df)
     
     # Model training and tuning
     X = processed_df.drop(target_col, axis=1)
@@ -87,7 +91,15 @@ def analyze_data(file, target_col, wandb_key):
         "shap_plot": shap_plot
     })
     
-    return processed_df, insights, dist_plot, corr_plot, missing_plot, study.best_params, shap_plot
+    return (
+        processed_df, 
+        insights, 
+        visualizations['distribution'], 
+        visualizations['correlations'], 
+        visualizations['missing'], 
+        study.best_params, 
+        shap_plot
+    )
 
 # Gradio Interface
 with gr.Blocks() as demo:
