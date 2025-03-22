@@ -1,6 +1,6 @@
 gradio
 pandas
-smolai
+smolagents
 shap
 optuna
 wandb
