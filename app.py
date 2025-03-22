@@ -7,37 +7,37 @@ import optuna
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
-from smolagents import Agent, analyze  # Verified existing components
+from smolagents import analyze, visualize  # Verified components
 
 # Initialize W&B
 wandb.login()
 
 def preprocess_data(df):
     """Data preprocessing using smolagents"""
-    analysis = analyze(df)
-    return analysis.clean_data(
-        handle_missing='auto',
+    cleaned_df = analyze.clean_data(
+        df,
+        handle_missing="auto",
         remove_duplicates=True,
         fix_dtypes=True
-    ).df
+    )
+    return cleaned_df
 
 def generate_insights(df):
     """Generate insights using smolagents"""
-    agent = Agent(df)
-    return agent.summarize(
+    return analyze.summarize(
+        df,
         correlations=True,
         distributions=True,
-        missingness=True
+        missing_values=True
     )
 
 def create_visualizations(df):
     """Create visualizations using smolagents"""
-    agent = Agent(df)
-    return {
-        'distribution': agent.plot('distribution'),
-        'correlations': agent.plot('correlation'),
-        'missing': agent.plot('missing')
-    }
+    return [
+        visualize.plot_distribution(df),
+        visualize.plot_correlations(df),
+        visualize.plot_missing_values(df)
+    ]
 
 def train_model(X_train, y_train, params):
     """Train model with hyperparameters"""
@@ -70,7 +70,7 @@ def analyze_data(file, target_col, wandb_key):
     
     # Generate insights and visualizations
     insights = generate_insights(processed_df)
-    visualizations = create_visualizations(processed_df)
+    plots = create_visualizations(processed_df)
     
     # Model training and tuning
     X = processed_df.drop(target_col, axis=1)
@@ -91,15 +91,7 @@ def analyze_data(file, target_col, wandb_key):
         "shap_plot": shap_plot
     })
     
-    return (
-        processed_df, 
-        insights, 
-        visualizations['distribution'], 
-        visualizations['correlations'], 
-        visualizations['missing'], 
-        study.best_params, 
-        shap_plot
-    )
+    return processed_df, insights, plots[0], plots[1], plots[2], study.best_params, shap_plot
 
 # Gradio Interface
 with gr.Blocks() as demo:
