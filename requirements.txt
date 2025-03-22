@@ -1,9 +1,11 @@
 gradio
 pandas
-smolagents
-shap
+numpy
+scikit-learn
 optuna
+shap
 wandb
+smolagents
 matplotlib
 seaborn
-scikit-learn
+xlrd
