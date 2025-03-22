@@ -1,7 +1,9 @@
-streamlit
+gradio
 pandas
-numpy
-smolagents # Replace with the actual version of smolagents
-openpyxl  # For Excel file support
-matplotlib  # For visualizations
-seaborn  # For advanced visualizations
+smolai
+shap
+optuna
+wandb
+matplotlib
+seaborn
+scikit-learn
