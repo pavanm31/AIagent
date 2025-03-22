@@ -1,6 +1,6 @@
 import gradio as gr
 import pandas as pd
-import smolai
+import smolagents
 import shap
 import optuna
 import wandb
@@ -12,15 +12,15 @@ from sklearn.metrics import accuracy_score
 
 def preprocess_data(file):
     df = pd.read_csv(file.name) if file.name.endswith(".csv") else pd.read_excel(file.name)
-    df = smolai.clean(df)  # SmolAgent for preprocessing (handling missing values, fixing format errors, duplicates, etc.)
+    df = smolagents.clean(df)  # SmolAgent for preprocessing (handling missing values, fixing format errors, duplicates, etc.)
     return df
 
 def generate_insights(df):
-    insights = smolai.analyze(df)  # SmolAgent to generate data insights
+    insights = smolagents.analyze(df)  # SmolAgent to generate data insights
     return insights
 
 def generate_visualizations(df):
-    figs = smolai.visualize(df)  # SmolAgent to create key visualizations
+    figs = smolagents.visualize(df)  # SmolAgent to create key visualizations
     return figs
 
 def objective(trial, X_train, y_train, X_test, y_test):
