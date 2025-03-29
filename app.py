@@ -81,7 +81,7 @@ def format_analysis_report(raw_output, visuals):
             </div>
         </div>
         """
-        return report, visuals, list(analysis_dict.get('insights', {}).values()
+        return report, visuals, list(analysis_dict.get('insights', {})).values()
     except Exception as e:
         print(f"Error formatting report: {e}")
         return raw_output, visuals, []
