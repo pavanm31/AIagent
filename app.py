@@ -8,6 +8,9 @@ import time
 import psutil
 import optuna
 import ast
+import numpy as np
+from lime.lime_text import LimeTextExplainer
+from functools import lru_cache
 
 # Authenticate Hugging Face
 hf_token = os.getenv("HF_TOKEN")
@@ -15,6 +18,51 @@ login(token=hf_token, add_to_git_credential=True)
 
 # Initialize Model
 model = HfApiModel("mistralai/Mixtral-8x7B-Instruct-v0.1", token=hf_token)
+
+# Cache for explanations (last 10 explanations)
+@lru_cache(maxsize=10)
+def cached_generate_lime_explanation(insight_text: str, class_names: tuple = ("Negative", "Positive")):
+    """
+    Generate and cache LIME explanations to improve performance
+    """
+    explainer = LimeTextExplainer(class_names=class_names)
+    
+    def classifier_fn(texts):
+        # Use the actual model to get predictions for explanations
+        responses = []
+        for text in texts:
+            # Create a prompt that asks for sentiment analysis
+            prompt = f"""
+            Analyze the following data insight and classify its sentiment:
+            Insight: {text}
+            
+            Return response as a JSON format with 'positive' and 'negative' scores:
+            {{"positive": 0.0-1.0, "negative": 0.0-1.0}}
+            """
+            response = model.generate(prompt, max_tokens=100)
+            try:
+                # Parse the JSON response
+                response_dict = ast.literal_eval(response)
+                pos = float(response_dict.get("positive", 0))
+                neg = float(response_dict.get("negative", 0))
+                # Normalize to sum to 1
+                total = pos + neg
+                if total > 0:
+                    pos /= total
+                    neg /= total
+                responses.append([neg, pos])
+            except:
+                responses.append([0.5, 0.5])
+        return np.array(responses)
+    
+    exp = explainer.explain_instance(
+        insight_text,
+        classifier_fn,
+        num_features=10,
+        top_labels=1,
+        num_samples=100
+    )
+    return exp.as_html()
 
 def format_analysis_report(raw_output, visuals):
     try:
@@ -33,9 +81,10 @@ def format_analysis_report(raw_output, visuals):
             </div>
         </div>
         """
-        return report, visuals
-    except:
-        return raw_output, visuals
+        return report, visuals, list(analysis_dict.get('insights', {}).values()
+    except Exception as e:
+        print(f"Error formatting report: {e}")
+        return raw_output, visuals, []
 
 def format_observations(observations):
     return '\n'.join([
@@ -110,7 +159,11 @@ def tune_hyperparameters(n_trials: int):
     return f"Best Hyperparameters: {study.best_params}"
 
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown("## 📊 AI Data Analysis Agent with Hyperparameter Optimization")
+    gr.Markdown("## 📊 AI Data Analysis Agent with Explainability")
+    
+    # Store insights in a hidden component
+    insights_store = gr.State([])
+    
     with gr.Row():
         with gr.Column():
             file_input = gr.File(label="Upload CSV Dataset", type="filepath")
@@ -118,12 +171,58 @@ with gr.Blocks(theme=gr.themes.Soft()) as demo:
             analyze_btn = gr.Button("Analyze", variant="primary")
             optuna_trials = gr.Number(label="Number of Hyperparameter Tuning Trials", value=10)
             tune_btn = gr.Button("Optimize Hyperparameters", variant="secondary")
+            
+            # Add dropdown for insight selection
+            insight_dropdown = gr.Dropdown(
+                label="Select Insight to Explain",
+                interactive=True,
+                visible=False
+            )
+            explain_btn = gr.Button("Generate Explanation", variant="primary", visible=False)
+            
         with gr.Column():
-            analysis_output = gr.Markdown("### Analysis results will appear here...")
+            analysis_output = gr.HTML("### Analysis results will appear here...")
             optuna_output = gr.Textbox(label="Best Hyperparameters")
             gallery = gr.Gallery(label="Data Visualizations", columns=2)
+            explanation_html = gr.HTML(label="Model Explanation")
     
-    analyze_btn.click(fn=analyze_data, inputs=[file_input, notes_input], outputs=[analysis_output, gallery])
-    tune_btn.click(fn=tune_hyperparameters, inputs=[optuna_trials], outputs=[optuna_output])
+    def update_insight_dropdown(insights):
+        if insights and len(insights) > 0:
+            return gr.Dropdown(
+                choices=[(f"Insight {i+1}", insight) for i, insight in enumerate(insights)],
+                value=insights[0],
+                visible=True
+            ), gr.Button(visible=True)
+        return gr.Dropdown(visible=False), gr.Button(visible=False)
+    
+    def generate_explanation(selected_insight):
+        if not selected_insight:
+            return "<p>Please select an insight first</p>"
+        return cached_generate_lime_explanation(selected_insight)
+    
+    # Analysis button click handler
+    analyze_btn.click(
+        fn=analyze_data,
+        inputs=[file_input, notes_input],
+        outputs=[analysis_output, gallery, insights_store]
+    ).then(
+        fn=update_insight_dropdown,
+        inputs=insights_store,
+        outputs=[insight_dropdown, explain_btn]
+    )
+    
+    # Explanation button click handler
+    explain_btn.click(
+        fn=generate_explanation,
+        inputs=insight_dropdown,
+        outputs=explanation_html
+    )
+    
+    # Hyperparameter tuning button
+    tune_btn.click(
+        fn=tune_hyperparameters,
+        inputs=[optuna_trials],
+        outputs=[optuna_output]
+    )
 
 demo.launch(debug=True)
