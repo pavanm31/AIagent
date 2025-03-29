@@ -9,3 +9,4 @@ smolagents
 matplotlib
 seaborn
 xlrd
+lime
