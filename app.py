@@ -26,8 +26,15 @@ model = HfApiModel("mistralai/Mixtral-8x7B-Instruct-v0.1", token=hf_token)
 
 def format_analysis_report(raw_output, visuals):
     try:
-        analysis_dict = raw_output if isinstance(raw_output, dict) else ast.literal_eval(str(raw_output))
-        
+        if isinstance(raw_output, dict):
+            analysis_dict = raw_output
+        else:
+            try:
+                analysis_dict = ast.literal_eval(str(raw_output))
+            except (SyntaxError, ValueError) as e:
+                print(f"Error parsing CodeAgent output: {e}")
+                return str(raw_output), visuals  # Return raw output as string
+                
         report = f"""
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <h1 style="color: #2B547E; border-bottom: 2px solid #2B547E; padding-bottom: 10px;">📊 Data Analysis Report</h1>
@@ -43,7 +50,7 @@ def format_analysis_report(raw_output, visuals):
         """
         return report, visuals
     except Exception as e:
-        print(f"Error formatting analysis report: {e}")
+        print(f"Error in format_analysis_report: {e}")
         return str(raw_output), visuals
 
 def format_observations(observations):
@@ -91,8 +98,22 @@ def analyze_data(csv_file, additional_notes=""):
         1. Basic statistics and data quality checks
         2. 3 insightful analytical questions about relationships in the data
         3. Visualization of key patterns and correlations
-        4. Actionable real-world insights derived from findings
-        Generate publication-quality visualizations and save to './figures/'
+        4. Actionable real-world insights derived from findings.
+        Generate publication-quality visualizations and save to './figures/'.
+        Return the analysis results as a python dictionary that can be parsed by ast.literal_eval().
+        The dictionary should have the following structure:
+        {
+            'observations': {
+                'observation_1_key': 'observation_1_value',
+                'observation_2_key': 'observation_2_value',
+                ...
+            },
+            'insights': {
+                'insight_1_key': 'insight_1_value',
+                'insight_2_key': 'insight_2_value',
+                ...
+            }
+        }
     """, additional_args={"additional_notes": additional_notes, "source_file": csv_file})
     
     execution_time = time.time() - start_time
@@ -154,7 +175,7 @@ def tune_hyperparameters(csv_file, n_trials: int):
     shap_fig_path = "./figures/shap_summary.png"
     plt.savefig(shap_fig_path)
     wandb.log({"shap_summary": wandb.Image(shap_fig_path)})
-    plt.clf() #Clear figure to avoid plot overlap.
+    plt.clf()
     
     lime_explainer = lime.lime_tabular.LimeTabularExplainer(X_train.values, feature_names=X_train.columns, class_names=['target'], mode='classification')
     lime_explanation = lime_explainer.explain_instance(X_test.iloc[0].values, model.predict_proba)
@@ -162,7 +183,7 @@ def tune_hyperparameters(csv_file, n_trials: int):
     lime_fig_path = "./figures/lime_explanation.png"
     lime_fig.savefig(lime_fig_path)
     wandb.log({"lime_explanation": wandb.Image(lime_fig_path)})
-    plt.clf() #Clear figure to avoid plot overlap.
+    plt.clf()
 
     return f"Best Hyperparameters: {best_params}<br>Accuracy: {accuracy}<br>Precision: {precision}<br>Recall: {recall}<br>F1-score: {f1}"
 
