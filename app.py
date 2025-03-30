@@ -104,7 +104,7 @@ def format_analysis_report(raw_output, visuals, metrics=None, explainability_plo
                 <h2 style="color: #2B547E;">⚙️ Model Hyperparameters</h2>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
                     {''.join([
-                        f"""
+                        f""
                         <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                             <h3 style="margin: 0 0 10px 0; color: #4A708B;">{key.replace('_', ' ').title()}</h3>
                             <p style="font-size: 18px; margin: 0;">{value}</p>
