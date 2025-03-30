@@ -96,24 +96,23 @@ def format_analysis_report(raw_output, visuals, metrics=None, explainability_plo
             </div>
             """
         
-        # Hyperparameters section
-        hyperparams_section = ""
-        if hyperparams:
-            hyperparams_section = f"""
-            <div style="margin-top: 25px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
-                <h2 style="color: #2B547E;">⚙️ Model Hyperparameters</h2>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-                    {''.join([
-                        f""
-                        <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                            <h3 style="margin: 0 0 10px 0; color: #4A708B;">{key.replace('_', ' ').title()}</h3>
-                            <p style="font-size: 18px; margin: 0;">{value}</p>
-                        </div>
-                        """ for key, value in hyperparams.items()
-                    ])}
-                </div>
-            </div>
-            """
+        hyperparams_items = ''.join([
+    f"""
+    <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+        <h3 style="margin: 0 0 10px 0; color: #4A708B;">{key.replace('_', ' ').title()}</h3>
+        <p style="font-size: 18px; margin: 0;">{value}</p>
+    </div>
+    """ for key, value in hyperparams.items()
+])
+
+hyperparams_section = f"""
+<div style="margin-top: 25px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+    <h2 style="color: #2B547E;">⚙️ Model Hyperparameters</h2>
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+        {hyperparams_items}
+    </div>
+</div>
+"""
         
         # Explainability section
         explainability_section = ""
