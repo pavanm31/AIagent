@@ -96,23 +96,26 @@ def format_analysis_report(raw_output, visuals, metrics=None, explainability_plo
             </div>
             """
         
-        hyperparams_items = ''.join([
-    f"""
-    <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-        <h3 style="margin: 0 0 10px 0; color: #4A708B;">{key.replace('_', ' ').title()}</h3>
-        <p style="font-size: 18px; margin: 0;">{value}</p>
-    </div>
-    """ for key, value in hyperparams.items()
-])
-
-hyperparams_section = f"""
-<div style="margin-top: 25px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
-    <h2 style="color: #2B547E;">⚙️ Model Hyperparameters</h2>
-    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-        {hyperparams_items}
-    </div>
-</div>
-"""
+        # Hyperparameters section
+        hyperparams_section = ""
+        if hyperparams:
+            hyperparams_items = ''.join([
+                f"""
+                <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <h3 style="margin: 0 0 10px 0; color: #4A708B;">{key.replace('_', ' ').title()}</h3>
+                    <p style="font-size: 18px; margin: 0;">{value}</p>
+                </div>
+                """ for key, value in hyperparams.items()
+            ])
+            
+            hyperparams_section = f"""
+            <div style="margin-top: 25px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                <h2 style="color: #2B547E;">⚙️ Model Hyperparameters</h2>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                    {hyperparams_items}
+                </div>
+            </div>
+            """
         
         # Explainability section
         explainability_section = ""
@@ -304,187 +307,4 @@ def analyze_data(csv_file, additional_notes="", perform_ml=True):
                         'max_depth': None,
                         'min_samples_split': 2,
                         'min_samples_leaf': 1,
-                        'max_features': 'sqrt',
-                        'bootstrap': True
-                    }
-                    
-                    # Log hyperparameters to wandb
-                    wandb.config.update({"model_hyperparameters": hyperparams})
-                    
-                    # Evaluate baseline model
-                    baseline_model = RandomForestClassifier(random_state=42, **hyperparams)
-                    metrics = evaluate_model(X, y, baseline_model)
-                    
-                    # Generate explainability plots
-                    feature_names = processed_df.columns[:-1]
-                    explainability_plots = generate_explainability_plots(X, baseline_model, feature_names)
-                    
-                    wandb.log(metrics)
-            except Exception as e:
-                print(f"ML analysis failed: {str(e)}")
-                wandb.log({"ml_error": str(e)})
-        
-        # Run the main analysis
-        agent = CodeAgent(tools=[], model=model, additional_authorized_imports=["numpy", "pandas", "matplotlib.pyplot", "seaborn"])
-        analysis_result = agent.run("""
-            You are an expert data analyst. Perform comprehensive analysis including:
-            1. Basic statistics and data quality checks
-            2. 3 insightful analytical questions about relationships in the data
-            3. Visualization of key patterns and correlations
-            4. Actionable real-world insights derived from findings
-            Generate publication-quality visualizations and save to './figures/'
-        """, additional_args={"additional_notes": additional_notes, "source_file": csv_file})
-        
-    except Exception as e:
-        analysis_result = f"Analysis failed: {str(e)}"
-    
-    execution_time = time.time() - start_time
-    final_memory = process.memory_info().rss / 1024 ** 2
-    memory_usage = final_memory - initial_memory
-    wandb.log({
-        "execution_time_sec": execution_time,
-        "memory_usage_mb": memory_usage,
-        **({"model_metrics": metrics} if metrics else {})
-    })
-    
-    visuals = [os.path.join('./figures', f) for f in os.listdir('./figures') if f.endswith(('.png', '.jpg', '.jpeg'))]
-    for viz in visuals:
-        wandb.log({os.path.basename(viz): wandb.Image(viz)})
-    
-    run.finish()
-    return format_analysis_report(analysis_result, visuals, metrics, explainability_plots, hyperparams)
-
-def objective(trial, csv_path):
-    try:
-        # Load and preprocess data
-        df = pd.read_csv(csv_path)
-        processed_df = preprocess_data(df)
-        
-        if len(processed_df.columns) <= 1:
-            return 0.0  # No features to work with
-        
-        X = processed_df.iloc[:, :-1].values
-        y = processed_df.iloc[:, -1].values
-        
-        # Convert y to numeric if needed
-        if y.dtype == object:
-            y = pd.factorize(y)[0]
-        
-        # Define hyperparameter space
-        params = {
-            'n_estimators': trial.suggest_int('n_estimators', 50, 500),
-            'max_depth': trial.suggest_int('max_depth', 3, 15),
-            'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-            'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
-            'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2']),
-            'bootstrap': trial.suggest_categorical('bootstrap', [True, False])
-        }
-        
-        # Log hyperparameters to wandb
-        if wandb.run:
-            wandb.log({"trial_params": params})
-        
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        # Standardize features
-        scaler = StandardScaler()
-        X_train = scaler.fit_transform(X_train)
-        X_test = scaler.transform(X_test)
-        
-        # Create and evaluate model
-        model = RandomForestClassifier(**params, random_state=42)
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
-        
-        # Calculate metrics
-        f1 = f1_score(y_test, y_pred, average='weighted')
-        accuracy = accuracy_score(y_test, y_pred)
-        
-        # Log metrics to wandb
-        if wandb.run:
-            wandb.log({
-                "trial_f1": f1,
-                "trial_accuracy": accuracy,
-                "trial_number": trial.number
-            })
-        
-        return f1
-    
-    except Exception as e:
-        print(f"Trial failed: {str(e)}")
-        return 0.0
-
-def tune_hyperparameters(n_trials: int, csv_file):
-    try:
-        if not csv_file:
-            return "Please upload a CSV file first for hyperparameter tuning."
-        
-        # Save the uploaded file temporarily for Optuna
-        temp_path = "temp_optuna_data.csv"
-        with open(temp_path, "wb") as f:
-            f.write(csv_file.read())
-        
-        # Verify the data can be loaded
-        df = pd.read_csv(temp_path)
-        if len(df.columns) <= 1:
-            os.remove(temp_path)
-            return "Dataset needs at least one feature and one target column."
-        
-        # Initialize wandb run for hyperparameter tuning
-        wandb.login(key=os.environ.get('WANDB_API_KEY'))
-        tuning_run = wandb.init(project="huggingface-hyperparameter-tuning", reinit=True)
-        
-        # Create study and optimize
-        study = optuna.create_study(direction="maximize")
-        study.optimize(lambda trial: objective(trial, temp_path), n_trials=n_trials)
-        
-        # Log best parameters and metrics
-        tuning_run.config.update({"best_hyperparameters": study.best_params})
-        tuning_run.log({
-            "best_f1_score": study.best_value,
-            "best_trial_number": study.best_trial.number
-        })
-        
-        tuning_run.finish()
-        os.remove(temp_path)
-        
-        return f"""
-        Best Hyperparameters: {study.best_params}
-        Best F1 Score: {study.best_value:.4f}
-        """
-    except Exception as e:
-        return f"Hyperparameter tuning failed: {str(e)}"
-
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown("## 📊 AI Data Analysis Agent with Hyperparameter Optimization")
-    with gr.Row():
-        with gr.Column():
-            file_input = gr.File(label="Upload CSV Dataset", type="filepath")
-            notes_input = gr.Textbox(label="Dataset Notes (Optional)", lines=3)
-            perform_ml = gr.Checkbox(label="Perform Machine Learning Analysis", value=True)
-            analyze_btn = gr.Button("Analyze", variant="primary")
-            with gr.Accordion("Hyperparameter Tuning", open=False):
-                optuna_trials = gr.Number(label="Number of Trials", value=10, precision=0)
-                tune_btn = gr.Button("Optimize Hyperparameters", variant="secondary")
-        with gr.Column():
-            analysis_output = gr.HTML("""<div style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2 style="color: #2B547E;">Analysis results will appear here...</h2>
-                <p>Upload a CSV file and click "Analyze" to begin.</p>
-            </div>""")
-            optuna_output = gr.Textbox(label="Tuning Results", interactive=False)
-            gallery = gr.Gallery(label="Data Visualizations", columns=2)
-    
-    analyze_btn.click(
-        fn=analyze_data,
-        inputs=[file_input, notes_input, perform_ml],
-        outputs=[analysis_output, gallery]
-    )
-    tune_btn.click(
-        fn=tune_hyperparameters,
-        inputs=[optuna_trials, file_input],
-        outputs=[optuna_output]
-    )
-
-if __name__ == "__main__":
-    demo.launch(debug=True)
+                        'max
