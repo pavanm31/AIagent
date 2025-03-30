@@ -56,7 +56,7 @@ def format_insights(insights, visuals):
         """ for idx, (key, insight) in enumerate(insights.items())
     ])
 
-def format_analysis_report(raw_output, visuals, metrics=None, explainability_plots=None):
+def format_analysis_report(raw_output, visuals, metrics=None, explainability_plots=None, hyperparams=None):
     try:
         # Ensure we have a dictionary to work with
         if isinstance(raw_output, str):
@@ -92,6 +92,25 @@ def format_analysis_report(raw_output, visuals, metrics=None, explainability_plo
                         <h3 style="margin: 0 0 10px 0; color: #4A708B;">F1 Score</h3>
                         <p style="font-size: 24px; font-weight: bold; margin: 0;">{metrics.get('f1', 0):.2f}</p>
                     </div>
+                </div>
+            </div>
+            """
+        
+        # Hyperparameters section
+        hyperparams_section = ""
+        if hyperparams:
+            hyperparams_section = f"""
+            <div style="margin-top: 25px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                <h2 style="color: #2B547E;">⚙️ Model Hyperparameters</h2>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                    {''.join([
+                        f"""
+                        <div style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                            <h3 style="margin: 0 0 10px 0; color: #4A708B;">{key.replace('_', ' ').title()}</h3>
+                            <p style="font-size: 18px; margin: 0;">{value}</p>
+                        </div>
+                        """ for key, value in hyperparams.items()
+                    ])}
                 </div>
             </div>
             """
@@ -132,6 +151,7 @@ def format_analysis_report(raw_output, visuals, metrics=None, explainability_plo
         report = f"""
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <h1 style="color: #2B547E; border-bottom: 2px solid #2B547E; padding-bottom: 10px;">📊 Data Analysis Report</h1>
+            {hyperparams_section}
             {metrics_section}
             {explainability_section}
             {observations_section}
@@ -260,6 +280,7 @@ def analyze_data(csv_file, additional_notes="", perform_ml=True):
     
     metrics = None
     explainability_plots = None
+    hyperparams = None
     
     try:
         # Load and preprocess data
@@ -278,8 +299,21 @@ def analyze_data(csv_file, additional_notes="", perform_ml=True):
                     if y.dtype == object:
                         y = pd.factorize(y)[0]
                     
+                    # Define model hyperparameters
+                    hyperparams = {
+                        'n_estimators': 100,
+                        'max_depth': None,
+                        'min_samples_split': 2,
+                        'min_samples_leaf': 1,
+                        'max_features': 'sqrt',
+                        'bootstrap': True
+                    }
+                    
+                    # Log hyperparameters to wandb
+                    wandb.config.update({"model_hyperparameters": hyperparams})
+                    
                     # Evaluate baseline model
-                    baseline_model = RandomForestClassifier(random_state=42, n_estimators=100)
+                    baseline_model = RandomForestClassifier(random_state=42, **hyperparams)
                     metrics = evaluate_model(X, y, baseline_model)
                     
                     # Generate explainability plots
@@ -308,14 +342,18 @@ def analyze_data(csv_file, additional_notes="", perform_ml=True):
     execution_time = time.time() - start_time
     final_memory = process.memory_info().rss / 1024 ** 2
     memory_usage = final_memory - initial_memory
-    wandb.log({"execution_time_sec": execution_time, "memory_usage_mb": memory_usage})
+    wandb.log({
+        "execution_time_sec": execution_time,
+        "memory_usage_mb": memory_usage,
+        **({"model_metrics": metrics} if metrics else {})
+    })
     
     visuals = [os.path.join('./figures', f) for f in os.listdir('./figures') if f.endswith(('.png', '.jpg', '.jpeg'))]
     for viz in visuals:
         wandb.log({os.path.basename(viz): wandb.Image(viz)})
     
     run.finish()
-    return format_analysis_report(analysis_result, visuals, metrics, explainability_plots)
+    return format_analysis_report(analysis_result, visuals, metrics, explainability_plots, hyperparams)
 
 def objective(trial, csv_path):
     try:
@@ -343,6 +381,10 @@ def objective(trial, csv_path):
             'bootstrap': trial.suggest_categorical('bootstrap', [True, False])
         }
         
+        # Log hyperparameters to wandb
+        if wandb.run:
+            wandb.log({"trial_params": params})
+        
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         
@@ -356,8 +398,19 @@ def objective(trial, csv_path):
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
         
-        # Return metric to optimize (F1 score in this case)
-        return f1_score(y_test, y_pred, average='weighted')
+        # Calculate metrics
+        f1 = f1_score(y_test, y_pred, average='weighted')
+        accuracy = accuracy_score(y_test, y_pred)
+        
+        # Log metrics to wandb
+        if wandb.run:
+            wandb.log({
+                "trial_f1": f1,
+                "trial_accuracy": accuracy,
+                "trial_number": trial.number
+            })
+        
+        return f1
     
     except Exception as e:
         print(f"Trial failed: {str(e)}")
@@ -379,11 +432,24 @@ def tune_hyperparameters(n_trials: int, csv_file):
             os.remove(temp_path)
             return "Dataset needs at least one feature and one target column."
         
+        # Initialize wandb run for hyperparameter tuning
+        wandb.login(key=os.environ.get('WANDB_API_KEY'))
+        tuning_run = wandb.init(project="huggingface-hyperparameter-tuning", reinit=True)
+        
         # Create study and optimize
         study = optuna.create_study(direction="maximize")
         study.optimize(lambda trial: objective(trial, temp_path), n_trials=n_trials)
         
+        # Log best parameters and metrics
+        tuning_run.config.update({"best_hyperparameters": study.best_params})
+        tuning_run.log({
+            "best_f1_score": study.best_value,
+            "best_trial_number": study.best_trial.number
+        })
+        
+        tuning_run.finish()
         os.remove(temp_path)
+        
         return f"""
         Best Hyperparameters: {study.best_params}
         Best F1 Score: {study.best_value:.4f}
